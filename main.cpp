@@ -14,14 +14,14 @@ int main() {
 
     if (geom.readBMPAndSaveAsTXT(bmpFile, txtFile)) {
         std::cout << "BMP успешно конвертирован в TXT!" << std::endl;
-
-        if (geom.convertTXTToSVG(txtFile, svgFile)) {
-            std::cout << "TXT успешно конвертирован в SVG!" << std::endl;
-        } else {
-            std::cout << "Ошибка при конвертации в SVG." << std::endl;
-        }
     } else {
         std::cout << "Ошибка при конвертации BMP в TXT." << std::endl;
+    }
+    
+    if (geom.convertTXTToSVG(txtFile, svgFile)) {
+            std::cout << "TXT успешно конвертирован в SVG!" << std::endl;
+    } else {
+            std::cout << "Ошибка при конвертации в SVG." << std::endl;
     }
 
     return 0;
