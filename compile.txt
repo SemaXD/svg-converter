@@ -1,1 +1,1 @@
-g++ -std=c++11 main.cpp geometry2d.cpp -o output.exe
+g++ -std=c++11 -fopenmp main.cpp geometry2d.cpp -o myprogram

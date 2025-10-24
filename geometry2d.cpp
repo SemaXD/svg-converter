@@ -2,6 +2,16 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <chrono> // библиотека для таймера
+#include <vector>
+
+// Подключаем OpenMP
+#ifdef _OPENMP
+#include <omp.h>
+#else
+// если OpenMP не включена, можно вывести предупреждение
+#warning OpenMP не включена. Компилятор должен поддерживать и включать OpenMP.
+#endif
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -19,7 +29,7 @@ bool Geometry2D::readBMPAndSaveAsTXT(const std::string& bmpFile, const std::stri
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             unsigned char pixel = data[y * width + x];
-            pixels[y][x] = (pixel == 0) ? 1 : 0; // Массив с данными о пикселях, 0 = черный = 1, 255 = белый = 0
+            pixels[y][x] = (pixel == 0) ? 1 : 0; // 0 в BMP (черный) = 1 в данных, 255 в BMP (белый) = 0 в данных
         }
     }
 
@@ -97,3 +107,62 @@ bool Geometry2D::loadTXT(const std::string& filename) {
 
     return true;
 }
+
+bool Geometry2D::multiplyMatrixByTwo(const std::string& inputTxt, const std::string& outputTxt) {
+    if (!loadTXT(inputTxt)) {
+        std::cerr << "Не удалось загрузить TXT файл: " << inputTxt << std::endl;
+        return false;
+    }
+
+    // Копируем матрицу для последовательной обработки
+    auto sequentialPixels = pixels; // Матрица для однопоточной обработки
+
+    // 1. Последовательный цикл
+    auto start_seq = std::chrono::high_resolution_clock::now(); 
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            sequentialPixels[y][x] *= 2;
+        }
+    }
+
+    auto end_seq = std::chrono::high_resolution_clock::now();
+    auto duration_seq = std::chrono::duration_cast<std::chrono::microseconds>(end_seq - start_seq); //Время обработки на 1 потоке
+
+    std::cout << "Время последовательного умножения: " << duration_seq.count() << " мкс\n";
+
+    // 2. Распараллеленный цикл (OpenMP)
+    auto start_omp = std::chrono::high_resolution_clock::now();
+
+    #pragma omp parallel for collapse(2)
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            pixels[y][x] *= 2;  
+        }
+    }
+
+    auto end_omp = std::chrono::high_resolution_clock::now();
+    auto duration_omp = std::chrono::duration_cast<std::chrono::microseconds>(end_omp - start_omp); //Время обработки на многопотоке
+
+    std::cout << "Время распараллеленного умножения: " << duration_omp.count() << " мкс\n";
+
+    // Сравнение
+    if (duration_omp.count() > 0) {
+        double speedup = static_cast<double>(duration_seq.count()) / duration_omp.count();
+        int num_threads = omp_get_max_threads();  // Максимальное количество потоков. ВАЖНО! выдаёт ошибку, но это нормально
+        double efficiency = speedup / num_threads;
+
+        std::cout << "Ускорение (Speedup): " << speedup << "x\n";
+        std::cout << "Количество потоков: " << num_threads << "\n";
+        std::cout << "Эффективность: " << efficiency << "\n";
+    } else {
+        std::cout << "Время распараллеливания слишком мало для расчёта.\n";
+    }
+
+
+    
+    saveTXT(outputTxt);
+    return true;
+}
+
+//Есть вариант ООП реализации экспорта в svg. Надо будет попробовать.
