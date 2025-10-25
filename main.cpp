@@ -17,13 +17,23 @@ void clearScreen() {
     system("clear");
 #endif
 
-
 }
 int main() {
     #ifdef _WIN32
         system("chcp 65001 > nul"); // Устанавливает UTF-8
     #endif
 
+    int n_threads; // Количество используемых потоков
+    std::cout << "Введите количество потоков (или 0 для автоопределения): ";
+    std::cin >> n_threads;
+
+    // Проверяем только, что введено число > 0
+    if (n_threads <= 0) {
+        std::cout << "Количество потоков: по умолчанию (все доступные)" << std::endl;
+        n_threads = 0; // передаём 0, чтобы внутри функции выбрать максимальное
+    } else {
+        std::cout << "Количество потоков установлено: " << n_threads << std::endl;
+    }
     Geometry2D geom;
 
     std::string bmpFile = "input.bmp"; //Монохромный bmp для конвертации в txt
@@ -78,17 +88,17 @@ int main() {
 
 
         } else if (inputNumber == "3") {
-            std::cout << "Введите путь к входному TXT файлу (с матрицей): ";
+            std::cout << "Введите путь к входному TXT файлу (с матрицей температур): ";
             std::cin >> txtFile;
-            std::cout << "Введите путь для сохранения результата: ";
+            std::cout << "Введите путь для сохранения результата (градиент): ";
             std::cin >> txtFinalFile;
             if (txtFile == "def") txtFile = "output.txt";
             if (txtFinalFile == "def") txtFinalFile = "output_matrix.txt";
 
-            if (geom.multiplyMatrixByTwo(txtFile, txtFinalFile)) {
-                std::cout << "\n✅  Матрица успешно умножена на 2 и сохранена!\n";
+            if (geom.computeGradient(txtFile, txtFinalFile, n_threads)) {  // передаём num_threads
+                std::cout << "\n✅  Градиент успешно вычислен и сохранён!\n";
             } else {
-                std::cout << "\n❌  Ошибка при обработке матрицы.\n";
+                std::cout << "\n❌  Ошибка при вычислении градиента.\n";
             }
 
 

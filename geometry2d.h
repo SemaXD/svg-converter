@@ -13,7 +13,7 @@ public:
     bool convertTXTToSVG(const std::string& txtFile, const std::string& svgFile);
 
     // Умножает каждое значение матрицы на 2
-    bool multiplyMatrixByTwo(const std::string& inputTxt, const std::string& outputTxt);
+    bool computeGradient(const std::string& inputTxt, const std::string& outputTxt, int n_threads);
 
 private:
     int width; // Ширина файла в пикселях

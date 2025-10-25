@@ -73,7 +73,7 @@ bool Geometry2D::convertTXTToSVG(const std::string& txtFile, const std::string& 
 
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            if (pixels[y][x] == 1) {  // черный пиксель
+            if (pixels[y][x] != 0) {  // черный пиксель
                 file << "<rect x=\"" << x << "\" y=\"" << y << "\" width=\"1\" height=\"1\" fill=\"black\" />\n";
             }
         }
@@ -108,61 +108,103 @@ bool Geometry2D::loadTXT(const std::string& filename) {
     return true;
 }
 
-bool Geometry2D::multiplyMatrixByTwo(const std::string& inputTxt, const std::string& outputTxt) {
+bool Geometry2D::computeGradient(const std::string& inputTxt, const std::string& outputTxt, int n_threads_requested) {
     if (!loadTXT(inputTxt)) {
         std::cerr << "Не удалось загрузить TXT файл: " << inputTxt << std::endl;
         return false;
     }
 
-    // Копируем матрицу для последовательной обработки
-    auto sequentialPixels = pixels; // Матрица для однопоточной обработки
+    // Определяем реальное количество потоков
+    int actual_num_threads = n_threads_requested;
+    if (n_threads_requested <= 0 || n_threads_requested > omp_get_max_threads()) {
+        actual_num_threads = omp_get_max_threads();
+        std::cout << "Количество потоков установлено: " << actual_num_threads << " (максимальное доступное)\n";
+    } else {
+        std::cout << "Количество потоков установлено: " << actual_num_threads << "\n";
+    }
+
+    // Устанавливаем количество потоков для текущей области
+    omp_set_num_threads(actual_num_threads);
 
     // 1. Последовательный цикл
-    auto start_seq = std::chrono::high_resolution_clock::now(); 
+    auto start_seq = std::chrono::high_resolution_clock::now();
 
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            sequentialPixels[y][x] *= 2;
+    // Временная матрица для градиента
+    std::vector<std::vector<double>> gradX_seq(height, std::vector<double>(width, 0.0));
+    std::vector<std::vector<double>> gradY_seq(height, std::vector<double>(width, 0.0));
+
+    for (int y = 1; y < height - 1; y++) {
+        for (int x = 1; x < width - 1; x++) {
+            gradX_seq[y][x] = (pixels[y][x + 1] - pixels[y][x - 1]) / 2.0;
+            gradY_seq[y][x] = (pixels[y + 1][x] - pixels[y - 1][x]) / 2.0;
         }
     }
 
     auto end_seq = std::chrono::high_resolution_clock::now();
-    auto duration_seq = std::chrono::duration_cast<std::chrono::microseconds>(end_seq - start_seq); //Время обработки на 1 потоке
+    auto duration_seq = std::chrono::duration_cast<std::chrono::microseconds>(end_seq - start_seq);
 
-    std::cout << "Время последовательного умножения: " << duration_seq.count() << " мкс\n";
+    std::cout << "Время последовательного вычисления градиента: " << duration_seq.count() << " мкс\n";
 
     // 2. Распараллеленный цикл (OpenMP)
     auto start_omp = std::chrono::high_resolution_clock::now();
 
-    #pragma omp parallel for collapse(2)
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            pixels[y][x] *= 2;  
+    std::vector<std::vector<double>> gradX_omp(height, std::vector<double>(width, 0.0));
+    std::vector<std::vector<double>> gradY_omp(height, std::vector<double>(width, 0.0));
+
+    #pragma omp parallel for collapse(2) num_threads(actual_num_threads)
+    for (int y = 1; y < height - 1; y++) {
+        for (int x = 1; x < width - 1; x++) {
+            gradX_omp[y][x] = (pixels[y][x + 1] - pixels[y][x - 1]) / 2.0;
+            gradY_omp[y][x] = (pixels[y + 1][x] - pixels[y - 1][x]) / 2.0;
         }
     }
 
     auto end_omp = std::chrono::high_resolution_clock::now();
-    auto duration_omp = std::chrono::duration_cast<std::chrono::microseconds>(end_omp - start_omp); //Время обработки на многопотоке
+    auto duration_omp = std::chrono::duration_cast<std::chrono::microseconds>(end_omp - start_omp);
 
-    std::cout << "Время распараллеленного умножения: " << duration_omp.count() << " мкс\n";
+    std::cout << "Время распараллеленного вычисления градиента: " << duration_omp.count() << " мкс\n";
+
 
     // Сравнение
     if (duration_omp.count() > 0) {
         double speedup = static_cast<double>(duration_seq.count()) / duration_omp.count();
-        int num_threads = omp_get_max_threads();  // Максимальное количество потоков. ВАЖНО! выдаёт ошибку, но это нормально
-        double efficiency = speedup / num_threads;
+        double efficiency = speedup / actual_num_threads;  // используем реальное количество
 
         std::cout << "Ускорение (Speedup): " << speedup << "x\n";
-        std::cout << "Количество потоков: " << num_threads << "\n";
+        std::cout << "Количество потоков (реальное): " << actual_num_threads << "\n";
         std::cout << "Эффективность: " << efficiency << "\n";
     } else {
         std::cout << "Время распараллеливания слишком мало для расчёта.\n";
     }
 
+    // Сохраняем результат (например, модуль градиента)
+    std::ofstream file(outputTxt);
+    if (!file.is_open()) {
+        std::cerr << "Не удалось создать TXT файл: " << outputTxt << std::endl;
+        return false;
+    }
 
-    
-    saveTXT(outputTxt);
+    file << "Geometry2d\n";
+    file << width << " " << height << "\n";
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            double magnitude = std::sqrt(gradX_omp[y][x] * gradX_omp[y][x] + gradY_omp[y][x] * gradY_omp[y][x]);
+            file << magnitude;  // записываем модуль градиента
+            if (x < width - 1) file << " ";
+        }
+        file << "\n";
+    }
+
     return true;
 }
 
 //Есть вариант ООП реализации экспорта в svg. Надо будет попробовать.
+
+//Наблюдения на процессора Intel Core i7 12700H (6 мощностных ядер + hyper treading, 8 энергоэффективных ядер)
+//При значении 12+ ядер - выдаёт плохую эффективность
+//При значении 4 ядра - выдаёт эффективность 1+ , что странно, ведь система не с распределённой памятью
+
+//Самый эффективный вариант: 2 ядра (70% эффективности)
+//Самый быстрый вариант: 12 ядер ( 2.5 ускорения, то же самое, что и при 20)
+//Самый оптимальный: 6 ядер (2.1-2.3 ускорения, 0.4 эффективность)
